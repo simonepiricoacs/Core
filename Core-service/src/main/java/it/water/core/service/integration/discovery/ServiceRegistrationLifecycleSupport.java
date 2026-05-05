@@ -75,7 +75,7 @@ public abstract class ServiceRegistrationLifecycleSupport {
                               ServiceRegistrationOptions options,
                               ServiceDiscoveryGlobalOptions globalOptions,
                               ClusterNodeOptions clusterNodeOptions,
-                              ServiceLivenessClient livenessClient) {
+                              ServiceLivenessClient providedLivenessClient) {
         ServiceDiscoveryRegistryClientInternal effectiveClient = client != null ? client : this.client;
         if (effectiveClient == null) {
             log.warn("Service registration skipped: ServiceDiscoveryRegistryClient not available");
@@ -86,11 +86,11 @@ public abstract class ServiceRegistrationLifecycleSupport {
             return;
         }
 
-        String discoveryUrl = defaultString(options.getDiscoveryUrl());
-        if (discoveryUrl.isBlank() && globalOptions != null) {
-            discoveryUrl = defaultString(globalOptions.getDiscoveryUrl());
+        String resolvedDiscoveryUrl = defaultString(options.getDiscoveryUrl());
+        if (resolvedDiscoveryUrl.isBlank() && globalOptions != null) {
+            resolvedDiscoveryUrl = defaultString(globalOptions.getDiscoveryUrl());
         }
-        if (discoveryUrl.isBlank()) {
+        if (resolvedDiscoveryUrl.isBlank()) {
             log.debug("Service registration disabled: discovery URL not configured (module nor global fallback)");
             return;
         }
@@ -138,9 +138,9 @@ public abstract class ServiceRegistrationLifecycleSupport {
 
         synchronized (lifecycleMonitor) {
             this.client = effectiveClient;
-            this.discoveryUrl = discoveryUrl;
+            this.discoveryUrl = resolvedDiscoveryUrl;
             this.lastRegisteredServiceInfo = serviceInfo;
-            this.livenessClient = livenessClient;
+            this.livenessClient = providedLivenessClient;
             this.registeredServiceName = serviceName;
             this.registeredInstanceId = effectiveInstanceId;
             this.registrationRetryInitialDelaySeconds = resolvedRetryInitialDelay;
@@ -223,16 +223,16 @@ public abstract class ServiceRegistrationLifecycleSupport {
         ServiceDiscoveryGlobalOptions globalOptions = findComponentQuietly(componentRegistry, ServiceDiscoveryGlobalOptions.class);
         ServiceDiscoveryRegistryClientInternal discoveryClient = findComponentQuietly(componentRegistry, ServiceDiscoveryRegistryClientInternal.class);
         ClusterNodeOptions clusterNodeOptions = findComponentQuietly(componentRegistry, ClusterNodeOptions.class);
-        ServiceLivenessClient livenessClient = findComponentQuietly(componentRegistry, ServiceLivenessClient.class);
+        ServiceLivenessClient runtimeLivenessClient = findComponentQuietly(componentRegistry, ServiceLivenessClient.class);
 
-        if (globalOptions == null || discoveryClient == null || livenessClient == null) {
+        if (globalOptions == null || discoveryClient == null || runtimeLivenessClient == null) {
             log.debug("Service registration bootstrap still waiting for dependencies: globalOptions={}, client={}, livenessClient={}",
-                    globalOptions != null, discoveryClient != null, livenessClient != null);
+                    globalOptions != null, discoveryClient != null, runtimeLivenessClient != null);
             return false;
         }
 
         cancelBootstrapRegistrationTaskLocked();
-        doRegister(discoveryClient, options, globalOptions, clusterNodeOptions, livenessClient);
+        doRegister(discoveryClient, options, globalOptions, clusterNodeOptions, runtimeLivenessClient);
         return true;
     }
 
@@ -307,7 +307,7 @@ public abstract class ServiceRegistrationLifecycleSupport {
 
     private EndpointValidationOutcome validateEndpointReachability(DiscoverableServiceInfoImpl serviceInfo) {
         String endpoint = resolveEndpoint(serviceInfo);
-        if (endpoint == null || endpoint.isBlank()) {
+        if (endpoint.isBlank()) {
             return EndpointValidationOutcome.REACHABLE;
         }
         try {
@@ -333,6 +333,10 @@ public abstract class ServiceRegistrationLifecycleSupport {
             if (isReachabilityAccepted(statusCode)) {
                 return EndpointValidationOutcome.REACHABLE;
             }
+            return EndpointValidationOutcome.NOT_READY_OR_UNREACHABLE;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.debug("Endpoint reachability check interrupted for '{}': {}", endpoint, e.getMessage());
             return EndpointValidationOutcome.NOT_READY_OR_UNREACHABLE;
         } catch (Exception e) {
             log.debug("Endpoint reachability check skipped for '{}': {}", endpoint, e.getMessage());
@@ -380,7 +384,7 @@ public abstract class ServiceRegistrationLifecycleSupport {
             }
         }
         String endpoint = resolveEndpoint(serviceInfo);
-        if (endpoint != null && !endpoint.isBlank()) {
+        if (!endpoint.isBlank()) {
             log.warn("Registered endpoint '{}' for service '{}' is not reachable after {} attempt(s)",
                     endpoint, serviceInfo.getServiceId(), ENDPOINT_CHECK_MAX_ATTEMPTS);
         }

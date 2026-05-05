@@ -37,4 +37,12 @@ public interface DiscoverableServiceInfo {
     String getServiceInstanceId();
 
     String getServiceRoot();
+
+    default String getServiceHost() {
+        return null;
+    }
+
+    default String getServiceEndpoint() {
+        return null;
+    }
 }

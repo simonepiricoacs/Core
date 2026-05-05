@@ -17,12 +17,10 @@
 
 package it.water.core.service;
 
-import it.water.core.api.service.integration.discovery.ServiceDiscoveryMetadataProvider;
-
 /**
  * @Author Aristide Cittadino
  * Abstraction of API Service.
  */
-public abstract class BaseAbstractService extends AbstractService implements ServiceDiscoveryMetadataProvider {
+public abstract class BaseAbstractService extends AbstractService {
 
 }

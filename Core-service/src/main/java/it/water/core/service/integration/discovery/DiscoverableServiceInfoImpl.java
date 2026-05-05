@@ -81,24 +81,31 @@ public class DiscoverableServiceInfoImpl implements DiscoverableServiceInfo {
         return serviceVersion;
     }
 
+    @Override
     public String getServiceHost() {
         return serviceHost;
     }
 
+    @Override
     public String getServiceEndpoint() {
         return serviceEndpoint;
     }
 
     @Override
     public String toString() {
-        String endpoint = serviceEndpoint != null && !serviceEndpoint.isBlank()
-                ? serviceEndpoint
-                : serviceProtocol + "://" + (serviceHost != null && !serviceHost.isBlank() ? serviceHost : "host") + ":" + servicePort + serviceRoot;
         return "DiscoverableServiceInfo{" +
                 "serviceId='" + serviceId + '\'' +
                 ", instanceId='" + serviceInstanceId + '\'' +
-                ", endpoint='" + endpoint + '\'' +
+                ", endpoint='" + resolveDisplayEndpoint() + '\'' +
                 ", version='" + serviceVersion + '\'' +
                 '}';
+    }
+
+    private String resolveDisplayEndpoint() {
+        if (serviceEndpoint != null && !serviceEndpoint.isBlank()) {
+            return serviceEndpoint;
+        }
+        String host = serviceHost != null && !serviceHost.isBlank() ? serviceHost : "host";
+        return serviceProtocol + "://" + host + ":" + servicePort + serviceRoot;
     }
 }

@@ -87,6 +87,18 @@ public final class DiscoveryAddressUtils {
         }
     }
 
+    public static String extractHostFromEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return "";
+        }
+        try {
+            URI uri = URI.create(endpoint.trim());
+            return normalizeHost(uri.getHost());
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     public static String extractRootFromEndpoint(String endpoint, String defaultRoot) {
         if (endpoint == null || endpoint.isBlank()) {
             return defaultRoot;

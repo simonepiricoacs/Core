@@ -46,29 +46,25 @@ class RestApiServiceRegistrationLifecycleManagerImplTest {
         manager.activateRestApiRegistrations(registry, getClass().getClassLoader());
 
         Assertions.assertNotNull(discoveryClient.registeredInfo);
-        Assertions.assertEquals("company", discoveryClient.registeredInfo.getServiceId());
+        Assertions.assertEquals("companyrestapi", discoveryClient.registeredInfo.getServiceId());
         Assertions.assertEquals("/water/companies", discoveryClient.registeredInfo.getServiceRoot());
         Assertions.assertEquals("8381", discoveryClient.registeredInfo.getServicePort());
         Assertions.assertNotNull(livenessClient.lastRegistration);
-        Assertions.assertEquals("company", livenessClient.lastRegistration.getServiceName());
+        Assertions.assertEquals("companyrestapi", livenessClient.lastRegistration.getServiceName());
 
         manager.deactivate();
 
-        Assertions.assertEquals("company", discoveryClient.unregisteredServiceName);
+        Assertions.assertEquals("companyrestapi", discoveryClient.unregisteredServiceName);
         Assertions.assertTrue(livenessClient.stopped);
     }
 
     @Test
-    void derivesKebabCaseServiceNameFromRestApiClassName() {
+    void derivesLowercaseServiceNameFromRestApiClassName() {
         RestApiServiceRegistrationLifecycleManagerImpl manager = new RestApiServiceRegistrationLifecycleManagerImpl();
 
-        Assertions.assertEquals("asset-category", manager.deriveServiceName(AssetCategoryRestApi.class));
-        Assertions.assertEquals("company", manager.deriveServiceName(CompanyRestApi.class));
-    }
-
-    @Test
-    void baseServicesExposeConventionBasedServiceName() {
-        Assertions.assertEquals("asset-category", new AssetCategoryServiceImpl().getServiceName());
+        Assertions.assertEquals("assetcategoryrestapi", manager.deriveRestServiceName(AssetCategoryRestApi.class));
+        Assertions.assertEquals("companyrestapi", manager.deriveRestServiceName(CompanyRestApi.class));
+        Assertions.assertEquals("assetcategoryspringrestapi", manager.deriveRestServiceName(AssetCategorySpringRestApi.class));
     }
 
     @Test
@@ -88,8 +84,9 @@ class RestApiServiceRegistrationLifecycleManagerImplTest {
         RestApiServiceRegistrationLifecycleManagerImpl manager = new RestApiServiceRegistrationLifecycleManagerImpl();
 
         Assertions.assertFalse(manager.isBusinessRoot("/"));
-        Assertions.assertFalse(manager.isBusinessRoot("/api/serviceregistration"));
+        Assertions.assertFalse(manager.isBusinessRoot("/serviceregistration"));
         Assertions.assertFalse(manager.isBusinessRoot("/internal/serviceregistration"));
+        Assertions.assertFalse(manager.isBusinessRoot("/gateway/routes"));
         Assertions.assertFalse(manager.isBusinessRoot("/proxy"));
         Assertions.assertFalse(manager.isBusinessRoot("/status"));
         Assertions.assertTrue(manager.isBusinessRoot("/assetcategories"));
@@ -333,6 +330,9 @@ class CompanyServiceImpl extends BaseServiceImpl implements CompanyApi {
 class AssetCategoryRestApi {
 }
 
+class AssetCategorySpringRestApi {
+}
+
 class AssetCategoryServiceImpl extends BaseServiceImpl {
     @Override
     protected BaseSystemApi getSystemService() {
@@ -341,6 +341,6 @@ class AssetCategoryServiceImpl extends BaseServiceImpl {
 }
 
 @FrameworkRestApi
-@Path("/api/serviceregistration")
+@Path("/serviceregistration")
 interface ServiceRegistrationRestApi extends RestApi {
 }

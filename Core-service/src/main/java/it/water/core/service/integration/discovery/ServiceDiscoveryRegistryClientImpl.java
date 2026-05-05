@@ -56,7 +56,9 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
     private static final long DEFAULT_HTTP_TIMEOUT_SECONDS = 10L;
     private static final String INTERNAL_API_PATH = "/internal/serviceregistration";
     private static final String REGISTER_API_PATH = INTERNAL_API_PATH + "/register";
-    private static final String PUBLIC_API_PATH = "/api/serviceregistration";
+    private static final String PUBLIC_API_PATH = "/serviceregistration";
+    private static final String APPLICATION_JSON = "application/json";
+    private static final String WATER_ROOT = "/water";
 
     @Getter
     @Setter
@@ -92,8 +94,8 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
             try {
                 HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                         .uri(URI.create(endpoint))
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
+                        .header("Content-Type", APPLICATION_JSON)
+                        .header("Accept", APPLICATION_JSON)
                         .timeout(httpTimeout)
                         .POST(HttpRequest.BodyPublishers.ofString(jsonBody));
 
@@ -105,19 +107,26 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
                             registration.getServiceId(), registration.getServiceInstanceId());
                     return;
                 }
-                log.warn("Registration attempt {}/{} failed: HTTP {} — {}",
-                        attempt, maxAttempts, response.statusCode(), response.body());
+                if (log.isWarnEnabled()) {
+                    log.warn("Registration attempt {}/{} failed: HTTP {} - {}",
+                            attempt, maxAttempts, response.statusCode(), response.body());
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
             } catch (Exception e) {
                 log.warn("Registration attempt {}/{} failed: {}", attempt, maxAttempts, e.getMessage());
             }
 
             if (attempt < maxAttempts) {
                 long delay = pickBackoff(backoffMs, attempt - 1);
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    return;
+                if (delay > 0L) {
+                    try {
+                        Thread.sleep(delay);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
             }
         }
@@ -137,9 +146,11 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
             if (response.statusCode() == 204 || response.statusCode() == 200) {
                 registeredInstances.remove(instanceId);
                 log.info("Service '{}' instance '{}' unregistered successfully", serviceName, instanceId);
-            } else {
+            } else if (log.isWarnEnabled()) {
                 log.warn("Unregister returned HTTP {}: {}", response.statusCode(), response.body());
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.warn("Failed to unregister service '{}' instance '{}': {}", serviceName, instanceId, e.getMessage());
         }
@@ -162,8 +173,13 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
                 registeredInstances.remove(instanceId);
                 return false;
             }
-            log.warn("Heartbeat returned HTTP {} for service '{}' instance '{}': {}",
-                    response.statusCode(), serviceName, instanceId, response.body());
+            if (log.isWarnEnabled()) {
+                log.warn("Heartbeat returned HTTP {} for service '{}' instance '{}': {}",
+                        response.statusCode(), serviceName, instanceId, response.body());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception e) {
             log.warn("Heartbeat failed for service '{}' instance '{}': {}", serviceName, instanceId, e.getMessage());
         }
@@ -176,7 +192,7 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
         try {
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
-                    .header("Accept", "application/json")
+                    .header("Accept", APPLICATION_JSON)
                     .timeout(resolveHttpTimeout())
                     .GET();
 
@@ -184,6 +200,9 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
             if (response.statusCode() == 200) {
                 return parseServiceInfo(response.body());
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         } catch (Exception e) {
             log.warn("Failed to get service info for id '{}': {}", id, e.getMessage());
         }
@@ -242,17 +261,16 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
         if (normalized.endsWith(path)) {
             return normalized;
         }
-        if (normalized.endsWith("/water")) {
+        if (normalized.endsWith(WATER_ROOT)) {
             return normalized + path;
         }
-        return normalized + "/water" + path;
+        return normalized + WATER_ROOT + path;
     }
 
     private String buildRegistrationJson(DiscoverableServiceInfo info) {
-        if (!(info instanceof DiscoverableServiceInfoImpl)) {
+        if (!(info instanceof DiscoverableServiceInfoImpl serviceInfo)) {
             throw new IllegalArgumentException("ServiceDiscoveryRegistryClientImpl requires DiscoverableServiceInfoImpl");
         }
-        DiscoverableServiceInfoImpl serviceInfo = (DiscoverableServiceInfoImpl) info;
         String version = "1.0.0";
         if (serviceInfo.getServiceVersion() != null && !serviceInfo.getServiceVersion().isBlank()) {
             version = serviceInfo.getServiceVersion();
@@ -314,9 +332,11 @@ public class ServiceDiscoveryRegistryClientImpl implements ServiceDiscoveryRegis
             String serviceName = rootNode.path("serviceName").asText("");
             String serviceVersion = rootNode.path("serviceVersion").asText("");
             String instanceId = rootNode.path("instanceId").asText("");
+            String serviceHost = DiscoveryAddressUtils.extractHostFromEndpoint(endpoint);
             String servicePort = DiscoveryAddressUtils.extractPortFromEndpoint(endpoint);
-            String serviceRoot = DiscoveryAddressUtils.extractRootFromEndpoint(endpoint, "/water");
-            return new DiscoverableServiceInfoImpl(protocol, servicePort, serviceName, instanceId, serviceRoot, serviceVersion);
+            String serviceRoot = DiscoveryAddressUtils.extractRootFromEndpoint(endpoint, WATER_ROOT);
+            return new DiscoverableServiceInfoImpl(protocol, servicePort, serviceName, instanceId, serviceRoot,
+                    serviceVersion, serviceHost, endpoint);
         } catch (Exception e) {
             log.warn("Failed to parse service info response: {}", e.getMessage());
             return null;
